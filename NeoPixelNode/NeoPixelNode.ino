@@ -32,13 +32,18 @@ WebSocketsClient webSocket;
 const uint16_t PixelCount = 25; // this example assumes 4 pixels, making it smaller will cause a failure
 const uint8_t PixelPin = 21;  // make sure to set this to the correct pin, ignored for Esp8266
 
-NeoPixelBus<NeoRgbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
+NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 
-// #define MESSAGE_INTERVAL 30000
-// #define HEARTBEAT_INTERVAL 25000
-//
-// uint64_t messageTimestamp = 0;
-// uint64_t heartbeatTimestamp = 0;
+// Multi-core programming
+// TaskHandle_t Task1, Task2;
+// SemaphoreHandle_t batton;
+// long start;
+
+#define MESSAGE_INTERVAL 3000
+#define HEARTBEAT_INTERVAL 1500
+
+uint64_t messageTimestamp = 0;
+uint64_t heartbeatTimestamp = 0;
 
 void handleFrame(uint8_t * state, size_t length) {
   int websocketNodeNumber = state[4] - '0';
@@ -80,7 +85,9 @@ void handleFrame(uint8_t * state, size_t length) {
         }
       } else if (state[i] - ';' == 0) {
         // set neopixel color for pixel number
-        // USE_SERIAL.printf("Setting pixel: %d | %d,%d,%d,%d\n", pixelNumber, R, G, B, W);
+        if (R != 0 || B != 0 || G != 0 || W != 0) {
+          USE_SERIAL.printf("Setting pixel: %d | %d,%d,%d,%d\n", pixelNumber, R, G, B, W);
+        }
         RgbwColor pixelColor = RgbwColor(R, G, B, W);
         strip.SetPixelColor(pixelNumber, pixelColor);
         // reset currentColor back to parse red
@@ -111,7 +118,15 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             break;
         case WStype_TEXT:
             // USE_SERIAL.printf("[WSc] get text: %s\n", payload);
+            // start = millis();
+            // USE_SERIAL.println("USING CORE:");
             handleFrame(payload, length);
+            strip.Show();
+            // USE_SERIAL.println("handled frame");
+            // USE_SERIAL.print("TIME: ");
+            // USE_SERIAL.print(millis() - start);
+            // USE_SERIAL.println();
+            // USE_SERIAL.println();
             // char *ptr = (const char *)&payload[0];
 
 			// send message to server
@@ -129,20 +144,24 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 
 }
 
+// void codeForTask1(void * parameter) {
+//   for (;;) {
+//     xSemaphoreTake(batton, portMAX_DELAY);
+//     strip.Show();
+//     xSemaphoreGive(batton);
+//     // USE_SERIAL.print("Websocket running on core ");
+//     // USE_SERIAL.print(xPortGetCoreID());
+//     // USE_SERIAL.println(xPortGetCoreID());
+//     // delay(100);
+//   }
+// }
+
 void setup() {
     USE_SERIAL.begin(115200);
 
+
+
     // USE_SERIAL.setDebugOutput(true);
-
-    USE_SERIAL.println();
-    USE_SERIAL.println();
-    USE_SERIAL.println();
-
-    // for (uint8_t t = 4; t > 0; t--) {
-    //     USE_SERIAL.printf("[SETUP] BOOT WAIT %d...\n", t);
-    //     USE_SERIAL.flush();
-    //     delay(1000);
-    // }
 
     WiFi.begin(ssid, password);
 
@@ -172,25 +191,34 @@ void setup() {
 
     // Initialize LEDs
     strip.Begin();
+
+    // xTaskCreatePinnedToCore(
+    //   codeForTask1, /* Task function */
+    //   "Task1",      /* Task name */
+    //   10000,         /* Stack size of task */
+    //   NULL,         /* Parameter of the task */
+    //   1,            /* Task priority */
+    //   &Task1,       /* Task handle to track task */
+    //   0            /* Core to run task on */
+    // );
 }
 
 void loop() {
+    // webSocket.loop();
     webSocket.loop();
 
-    // if(isConnected) {
-    //     uint64_t now = millis();
-    //
-    //     if(now - messageTimestamp > MESSAGE_INTERVAL) {
-    //         messageTimestamp = now;
-    //         // example socket.io message with type "messageType" and JSON payload
-    //         webSocket.sendTXT("42[\"messageType\",{\"greeting\":\"hello\"}]");
-    //     }
-    //     if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL) {
-    //         heartbeatTimestamp = now;
-    //         // socket.io heartbeat message
-    //         // webSocket.sendTXT("2");
-    //     }
-    // }
+    if(isConnected) {
+        uint64_t now = millis();
 
-    strip.Show();
+        if(now - messageTimestamp > MESSAGE_INTERVAL) {
+            messageTimestamp = now;
+            // example socket.io message with type "messageType" and JSON payload
+            webSocket.sendTXT("42[\"ping\",{\"node\":0}]");
+        }
+        if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL) {
+            heartbeatTimestamp = now;
+            // socket.io heartbeat message
+            webSocket.sendTXT("2");
+        }
+    }
 }
