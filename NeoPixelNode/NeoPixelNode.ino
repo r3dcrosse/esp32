@@ -1,5 +1,5 @@
 /*
- * SocketIO_test.ino
+ * NeoPixelNode.ino
  * author: @r3dcrosse
  * Created on: 07.11.2018
  * based off of: https://github.com/Links2004/arduinoWebSockets/blob/master/examples/esp8266/WebSocketClientSocketIO/WebSocketClientSocketIO.ino
@@ -21,7 +21,7 @@ const char* password = WLAN_PASS;
 char path[] = "/";
 char host[] = "192.168.198.180";
 int port = 3000;
-const int NODE_NUMBER = 1;
+int NODE_NUMBER = 1;
 bool isConnected = false;
 
 WiFiClient client;
@@ -39,10 +39,11 @@ NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 // SemaphoreHandle_t batton;
 // long start;
 
-#define MESSAGE_INTERVAL 3000
+#define PING_INTERVAL 2000
 #define HEARTBEAT_INTERVAL 1500
 
-uint64_t messageTimestamp = 0;
+uint64_t pingTimestamp = 0;
+uint64_t pingMeasurement = 0;
 uint64_t heartbeatTimestamp = 0;
 
 void handleFrame(uint8_t * state, size_t length) {
@@ -85,11 +86,9 @@ void handleFrame(uint8_t * state, size_t length) {
         }
       } else if (state[i] - ';' == 0) {
         // set neopixel color for pixel number
-        if (R != 0 || B != 0 || G != 0 || W != 0) {
-          USE_SERIAL.printf("Setting pixel: %d | %d,%d,%d,%d\n", pixelNumber, R, G, B, W);
-        }
         RgbwColor pixelColor = RgbwColor(R, G, B, W);
         strip.SetPixelColor(pixelNumber, pixelColor);
+
         // reset currentColor back to parse red
         currentColor = 'R';
 
@@ -99,6 +98,61 @@ void handleFrame(uint8_t * state, size_t length) {
     }
   }
 }
+
+char* intToStr(int value)
+{
+    int divisor = 1;
+    int bufferLength = 1;
+    int isNegative = 0;
+    int bufferIndex = 0;
+
+    // Handle the negative value case by remebering that the number is negative
+    // and then setting it positive
+    if(value < 0)
+    {
+        isNegative = 1;
+        value *= -1;
+        bufferIndex++; // move 1 place in the buffer so we don't overwrite the '-'
+    }
+
+    // Determine the length of the integer so we can allocate a string buffer
+    while(value / divisor >= 10)
+    {
+        divisor *= 10;
+        bufferLength++;
+    }
+
+    // Create the resulting char buffer that we'll return.
+    // bufferLength + 1 because we need a terminating NULL character.
+    // + isNegative because we need space for the negative sign, if necessary.
+    char *result = new char[bufferLength + 1 + isNegative];
+
+    // Set the first character to NULL or a negative sign
+    result[0] = isNegative == false ? 0 : '-';
+
+    while(bufferLength > 0)
+    {
+        // ASCII table has the number characters in sequence from 0-9 so use the
+        // ASCII value of '0' as the base
+        result[bufferIndex] = '0' + value / divisor;
+
+        // This removes the most significant digit converting 1337 to 337 because
+        // 1337 % 1000 = 337
+        value = value % divisor;
+
+        // Adjust the divisor to next lowest position
+        divisor = divisor / 10;
+
+        bufferIndex++;
+        bufferLength--;
+    }
+
+    // NULL terminate the string
+    result[bufferIndex] = 0;
+
+    return result;
+}
+
 
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
@@ -117,24 +171,41 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             }
             break;
         case WStype_TEXT:
+            if (payload[4] - '0' == NODE_NUMBER) {
+              uint64_t now = millis();
+              // Check if we got a ping message from websocket server
+              if (payload[5] - 'p' == 0) {
+                pingMeasurement = now;
+                // char pingMessage = printf("42[\"ping\",{\"node\":%d}]", NODE_NUMBER);
+                webSocket.sendTXT("42[\"pong\",{\"node\":1}]");
+              } else if (payload[5] - 'z' == 0) {
+                uint64_t latency = now - pingMeasurement;
+                // char latencyMessage = "42[\"latency\",{\"latency\":" + intToStr(latency) + "}]";
+
+                char *pingMessage;
+                asprintf(&pingMessage, "42[\"latency\",{\"latency\":%i,\"node\":%i}]", latency, NODE_NUMBER);
+                webSocket.sendTXT(pingMessage);
+                free(pingMessage); // release the memory allocated by asprintf.
+              } else {
+                handleFrame(payload, length);
+                strip.Show();
+              }
+            }
             // USE_SERIAL.printf("[WSc] get text: %s\n", payload);
             // start = millis();
             // USE_SERIAL.println("USING CORE:");
-            handleFrame(payload, length);
-            strip.Show();
             // USE_SERIAL.println("handled frame");
             // USE_SERIAL.print("TIME: ");
             // USE_SERIAL.print(millis() - start);
             // USE_SERIAL.println();
             // USE_SERIAL.println();
-            // char *ptr = (const char *)&payload[0];
 
 			// send message to server
 			// webSocket.sendTXT("message here");
             break;
         case WStype_BIN:
-            USE_SERIAL.println("[WSc] get binary length");
-            USE_SERIAL.println(length);
+            // USE_SERIAL.println("[WSc] get binary length");
+            // USE_SERIAL.println(length);
 //            hexdump(payload, length);
 
             // send data to server
@@ -203,6 +274,7 @@ void setup() {
     // );
 }
 
+char pingMessage = printf("42[\"ping\",{\"node\":%d}]", NODE_NUMBER);
 void loop() {
     // webSocket.loop();
     webSocket.loop();
@@ -210,10 +282,14 @@ void loop() {
     if(isConnected) {
         uint64_t now = millis();
 
-        if(now - messageTimestamp > MESSAGE_INTERVAL) {
-            messageTimestamp = now;
+        if(now - pingTimestamp > PING_INTERVAL) {
+            pingTimestamp = now;
             // example socket.io message with type "messageType" and JSON payload
-            webSocket.sendTXT("42[\"ping\",{\"node\":0}]");
+            char *pingMessage;
+            asprintf(&pingMessage, "42[\"ping\",{\"node\":%i}]", NODE_NUMBER);
+            webSocket.sendTXT(pingMessage);
+            free(pingMessage);
+            // webSocket.sendTXT(*pingMessage);
         }
         if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL) {
             heartbeatTimestamp = now;
