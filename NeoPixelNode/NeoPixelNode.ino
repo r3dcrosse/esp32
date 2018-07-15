@@ -17,7 +17,7 @@
 const uint8_t NODE_NUMBER = 1;
 const char* ssid     = WLAN_SSID;
 const char* password = WLAN_PASS;
-char host[] = "192.168.198.180";
+char host[] = "192.168.198.2";
 int port = 3000;
 char path[] = "/socket.io/?EIO=3";
 bool isConnected = false;
@@ -213,18 +213,59 @@ void handleWiFiConnection() {
   webSocket.setReconnectInterval(5000);
 }
 
+void wifiReconnect()
+{
+  WiFi.disconnect(true);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    USE_SERIAL.printf(".");
+  }
+
+  USE_SERIAL.println();
+  USE_SERIAL.println("WiFi connected");
+  USE_SERIAL.println("IP address: ");
+  USE_SERIAL.println(WiFi.localIP());
+  delay(500);
+
+  // Connect to socket io server
+  if (client.connect(host, port))
+  {
+    USE_SERIAL.println("Connected");
+  } else
+  {
+    USE_SERIAL.println("Connection failed");
+  }
+
+  // Handshake with the server
+  webSocket.beginSocketIO(host, port, path);
+  //webSocket.setAuthorization("user", "Password"); // HTTP Basic Authorization
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(5000);
+}
+
 void setup()
 {
   USE_SERIAL.begin(115200);
   USE_SERIAL.setDebugOutput(true);
-
   handleWiFiConnection();
+  WiFi.setAutoReconnect(true);
 
   // Initialize LEDs
   strip.Begin();
 }
 
-void loop() {
+void WiFiEvent(WiFiEvent_t event){
+    if(event == SYSTEM_EVENT_STA_DISCONNECTED) {
+      USE_SERIAL.println("Event: SYSTEM_EVENT_STA_DISCONNECTED, reconnecting");
+      WiFi.reconnect();
+      delay(5000);
+    }
+}
+
+void loop()
+{
   webSocket.loop();
 
   if (isConnected)
@@ -245,5 +286,16 @@ void loop() {
       // socket.io heartbeat message
       webSocket.sendTXT("2");
     }
+  }
+
+  // if(WiFi.getAutoReconnect())
+  // {
+  //   WiFi.onEvent(WiFiEvent);
+  // }
+  // USE_SERIAL(WiFi.status());
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    USE_SERIAL.println('WIFI Disconnected');
+    wifiReconnect();
   }
 }
