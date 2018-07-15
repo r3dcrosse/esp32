@@ -6,7 +6,8 @@
  */
 
 #include <Arduino.h>
-#include <NeoPixelBus.h>
+// #include <NeoPixelBus.h>
+#include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 
@@ -32,7 +33,26 @@ WebSocketsClient webSocket;
 const uint16_t PixelCount = 25; // this example assumes 4 pixels, making it smaller will cause a failure
 const uint8_t PixelPin = 21;  // make sure to set this to the correct pin, ignored for Esp8266
 
-NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
+// NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(PixelCount, PixelPin, NEO_GRBW + NEO_KHZ800);
+#define BRIGHTNESS 50
+byte neopix_gamma[] = {
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
+    1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
+    2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
+    5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
+   10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
+   17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
+   25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
+   37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
+   51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
+   69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
+   90, 92, 93, 95, 96, 98, 99,101,102,104,105,107,109,110,112,114,
+  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
+  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
+  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
 // Multi-core programming
 // TaskHandle_t Task1, Task2;
@@ -85,9 +105,12 @@ void handleFrame(uint8_t * state, size_t length) {
           currentColor = 'W';
         }
       } else if (state[i] - ';' == 0) {
-        // set neopixel color for pixel number
-        RgbwColor pixelColor = RgbwColor(R, G, B, W);
-        strip.SetPixelColor(pixelNumber, pixelColor);
+        // set neopixel color for pixel number (neopixel bus)
+        // RgbwColor pixelColor = RgbwColor(R, G, B, W);
+        // strip.SetPixelColor(pixelNumber, pixelColor);
+
+        // Adafruit_NeoPixel
+        strip.setPixelColor(pixelNumber, strip.Color(R, G, B, W));
 
         // reset currentColor back to parse red
         currentColor = 'R';
@@ -188,7 +211,9 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                 free(pingMessage); // release the memory allocated by asprintf.
               } else {
                 handleFrame(payload, length);
-                strip.Show();
+                // strip.Show(); // NeoPixelBus
+                strip.show(); // Adafruit_NeoPixel
+                delay(100);
               }
             }
             // USE_SERIAL.printf("[WSc] get text: %s\n", payload);
@@ -232,7 +257,7 @@ void setup() {
 
 
 
-    // USE_SERIAL.setDebugOutput(true);
+    USE_SERIAL.setDebugOutput(true);
 
     WiFi.begin(ssid, password);
 
@@ -260,9 +285,12 @@ void setup() {
     //webSocket.setAuthorization("user", "Password"); // HTTP Basic Authorization
     webSocket.onEvent(webSocketEvent);
 
-    // Initialize LEDs
-    strip.Begin();
+    // Initialize LEDs (NeoPixelBus)
+    // strip.Begin();
 
+    // Initial LEDs (Adafruit_NeoPixel)
+    strip.setBrightness(BRIGHTNESS);
+    strip.begin();
     // xTaskCreatePinnedToCore(
     //   codeForTask1, /* Task function */
     //   "Task1",      /* Task name */
@@ -282,15 +310,15 @@ void loop() {
     if(isConnected) {
         uint64_t now = millis();
 
-        if(now - pingTimestamp > PING_INTERVAL) {
-            pingTimestamp = now;
-            // example socket.io message with type "messageType" and JSON payload
-            char *pingMessage;
-            asprintf(&pingMessage, "42[\"ping\",{\"node\":%i}]", NODE_NUMBER);
-            webSocket.sendTXT(pingMessage);
-            free(pingMessage);
-            // webSocket.sendTXT(*pingMessage);
-        }
+        // if(now - pingTimestamp > PING_INTERVAL) {
+        //     pingTimestamp = now;
+        //     // example socket.io message with type "messageType" and JSON payload
+        //     char *pingMessage;
+        //     asprintf(&pingMessage, "42[\"ping\",{\"node\":%i}]", NODE_NUMBER);
+        //     webSocket.sendTXT(pingMessage);
+        //     free(pingMessage);
+        //     // webSocket.sendTXT(*pingMessage);
+        // }
         if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL) {
             heartbeatTimestamp = now;
             // socket.io heartbeat message
