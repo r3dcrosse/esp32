@@ -86,6 +86,9 @@ void handleFrame(uint8_t * state, size_t length) {
         }
       } else if (state[i] - ';' == 0) {
         // set neopixel color for pixel number
+        // if (R != 0 || G != 0 || B != 0 || W != 0) {
+        //   USE_SERIAL.printf("Drawing pixel %d:\n", pixelNumber);
+        // }
         RgbwColor pixelColor = RgbwColor(R, G, B, W);
         strip.SetPixelColor(pixelNumber, pixelColor);
 
@@ -165,7 +168,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                 USE_SERIAL.printf("[WSc] Connected to url:\n", payload);
                 isConnected = true;
 
-			    // send message to server when Connected
+			          // send message to server when Connected
                 // socket.io upgrade confirmation message (required)
 				        webSocket.sendTXT("5");
             }
@@ -191,22 +194,14 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                 strip.Show();
               }
             }
-            // USE_SERIAL.printf("[WSc] get text: %s\n", payload);
-            // start = millis();
-            // USE_SERIAL.println("USING CORE:");
-            // USE_SERIAL.println("handled frame");
-            // USE_SERIAL.print("TIME: ");
-            // USE_SERIAL.print(millis() - start);
-            // USE_SERIAL.println();
-            // USE_SERIAL.println();
 
-			// send message to server
-			// webSocket.sendTXT("message here");
+      			// send message to server
+      			// webSocket.sendTXT("message here");
             break;
         case WStype_BIN:
             // USE_SERIAL.println("[WSc] get binary length");
             // USE_SERIAL.println(length);
-//            hexdump(payload, length);
+            // hexdump(payload, length);
 
             // send data to server
             // webSocket.sendBIN(payload, length);
@@ -274,23 +269,21 @@ void setup() {
     // );
 }
 
-char pingMessage = printf("42[\"ping\",{\"node\":%d}]", NODE_NUMBER);
 void loop() {
-    // webSocket.loop();
     webSocket.loop();
 
     if(isConnected) {
         uint64_t now = millis();
-
-        if(now - pingTimestamp > PING_INTERVAL) {
-            pingTimestamp = now;
-            // example socket.io message with type "messageType" and JSON payload
-            char *pingMessage;
-            asprintf(&pingMessage, "42[\"ping\",{\"node\":%i}]", NODE_NUMBER);
-            webSocket.sendTXT(pingMessage);
-            free(pingMessage);
-            // webSocket.sendTXT(*pingMessage);
-        }
+        //
+        // if(now - pingTimestamp > PING_INTERVAL) {
+        //     pingTimestamp = now;
+        //     // example socket.io message with type "messageType" and JSON payload
+        //     char *pingMessage;
+        //     asprintf(&pingMessage, "42[\"ping\",{\"node\":%i}]", NODE_NUMBER);
+        //     webSocket.sendTXT(pingMessage);
+        //     free(pingMessage);
+        //     // webSocket.sendTXT(*pingMessage);
+        // }
         if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL) {
             heartbeatTimestamp = now;
             // socket.io heartbeat message
