@@ -14,20 +14,20 @@
 #define USE_SERIAL Serial
 
 // Wifi and Websocket info
-const uint8_t NODE_NUMBER = 1;
+const uint8_t NODE_NUMBER = 2;
 const char* ssid     = WLAN_SSID;
 const char* password = WLAN_PASS;
 char host[] = "192.168.198.2";
-int port = 3000;
+int port = 8000;
 char path[] = "/socket.io/?EIO=3";
 bool isConnected = false;
+const uint64_t WIFI_CHECK_INTERVAL = 3000;
 
 WiFiClient client;
 WebSocketsClient webSocket;
 
 // LED info
-// #define colorSaturation 128
-#define colorSaturation 8
+#define colorSaturation 128
 const uint16_t PixelCount = 25;
 const uint8_t PixelPin = 21;  // make sure to set this to the correct pin, ignored for Esp8266
 
@@ -37,8 +37,11 @@ NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 #define HEARTBEAT_INTERVAL 1700
 
 uint64_t pingTimestamp = 0;
+uint64_t pongTimestamp = 0;
+const uint64_t MAX_PONG_TIMEOUT = 6000;
 uint64_t pingMeasurement = 0;
 uint64_t heartbeatTimestamp = 0;
+uint64_t wifiCheckTimestamp = 0;
 
 /**
  * makeColorNumber ---------------------------------------------
@@ -151,15 +154,18 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
           asprintf(&pingMessage, "42[\"pong\",{\"node\":%i}]", NODE_NUMBER);
           webSocket.sendTXT(pingMessage);
           free(pingMessage);
+          pongTimestamp = now;
         }
         else if (payload[5] - 'z' == 0)
         {
-          uint64_t latency = now - pingMeasurement;
-
-          char *latencyMessage;
-          asprintf(&latencyMessage, "42[\"latency\",{\"latency\":%i,\"node\":%i}]", latency, NODE_NUMBER);
-          webSocket.sendTXT(latencyMessage);
-          free(latencyMessage); // release the memory allocated by asprintf.
+          // We got a pong from the server, so let's record the pong timestamp
+          pongTimestamp = now;
+          // uint64_t latency = now - pingMeasurement;
+          //
+          // char *latencyMessage;
+          // asprintf(&latencyMessage, "42[\"latency\",{\"latency\":%i,\"node\":%i}]", latency, NODE_NUMBER);
+          // webSocket.sendTXT(latencyMessage);
+          // free(latencyMessage); // release the memory allocated by asprintf.
         }
         else if (payload[5] - 'a' == 0)
         {
@@ -168,6 +174,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         else
         {
           handleFrame(payload, length);
+          USE_SERIAL.println("Got a websocket message and handled frameeee");
           strip.Show();
         }
       }
@@ -197,52 +204,21 @@ void handleWiFiConnection() {
   USE_SERIAL.println(WiFi.localIP());
   delay(500);
 
-  // Connect to socket io server
-  if (client.connect(host, port))
-  {
-    USE_SERIAL.println("Connected");
-  } else
-  {
-    USE_SERIAL.println("Connection failed");
-  }
-
   // Handshake with the server
   webSocket.beginSocketIO(host, port, path);
   //webSocket.setAuthorization("user", "Password"); // HTTP Basic Authorization
   webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(5000);
+  webSocket.setReconnectInterval(500);
+
+  // Initialize pong timestamp with current time
+  pongTimestamp = millis();
 }
 
 void wifiReconnect()
 {
+  isConnected = false;
   WiFi.disconnect(true);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    USE_SERIAL.printf(".");
-  }
-
-  USE_SERIAL.println();
-  USE_SERIAL.println("WiFi connected");
-  USE_SERIAL.println("IP address: ");
-  USE_SERIAL.println(WiFi.localIP());
-  delay(500);
-
-  // Connect to socket io server
-  if (client.connect(host, port))
-  {
-    USE_SERIAL.println("Connected");
-  } else
-  {
-    USE_SERIAL.println("Connection failed");
-  }
-
-  // Handshake with the server
-  webSocket.beginSocketIO(host, port, path);
-  //webSocket.setAuthorization("user", "Password"); // HTTP Basic Authorization
-  webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(5000);
+  handleWiFiConnection();
 }
 
 void setup()
@@ -250,27 +226,18 @@ void setup()
   USE_SERIAL.begin(115200);
   USE_SERIAL.setDebugOutput(true);
   handleWiFiConnection();
-  WiFi.setAutoReconnect(true);
 
   // Initialize LEDs
   strip.Begin();
 }
 
-void WiFiEvent(WiFiEvent_t event){
-    if(event == SYSTEM_EVENT_STA_DISCONNECTED) {
-      USE_SERIAL.println("Event: SYSTEM_EVENT_STA_DISCONNECTED, reconnecting");
-      WiFi.reconnect();
-      delay(5000);
-    }
-}
-
 void loop()
 {
   webSocket.loop();
+  uint64_t now = millis();
 
   if (isConnected)
   {
-    uint64_t now = millis();
     if(now - pingTimestamp > PING_INTERVAL)
     {
         pingTimestamp = now;
@@ -286,16 +253,29 @@ void loop()
       // socket.io heartbeat message
       webSocket.sendTXT("2");
     }
+
+    if ((now - pongTimestamp) > MAX_PONG_TIMEOUT)
+    {
+      USE_SERIAL.println("WE timed out, so we should restart the wifi...");
+      wifiReconnect();
+    }
   }
 
-  // if(WiFi.getAutoReconnect())
-  // {
-  //   WiFi.onEvent(WiFiEvent);
-  // }
-  // USE_SERIAL(WiFi.status());
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    USE_SERIAL.println('WIFI Disconnected');
-    wifiReconnect();
+  if ((now - wifiCheckTimestamp) > WIFI_CHECK_INTERVAL) {
+    wifiCheckTimestamp = now;
+    USE_SERIAL.println("CHECKING WIFI CONNECTION");
+    USE_SERIAL.println(WiFi.status());
+    USE_SERIAL.println("CONNECTED WIFI IS");
+    USE_SERIAL.println(WL_CONNECTED);
+    // USE_SERIAL.println("HEAP FREE:::::");
+    // USE_SERIAL.println(ESP.getFreeHeap());
+    USE_SERIAL.println("Is connected?");
+    USE_SERIAL.println(isConnected);
+    USE_SERIAL.println("::::::::::::::::::::::::");
+
+    if (WiFi.status() != WL_CONNECTED || !isConnected) {
+      USE_SERIAL.println("Trying to reconnect to WiFi...");
+      wifiReconnect();
+    }
   }
 }
