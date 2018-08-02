@@ -17,16 +17,15 @@
 const uint8_t NODE_NUMBER = 1;
 const char* ssid     = WLAN_SSID;
 const char* password = WLAN_PASS;
-char host[] = "10.8.8.20";
-int port = 3000;
+char host[] = "10.0.1.105";
+int port = 8000;
 char path[] = "/socket.io/?EIO=3";
 
 WiFiClient client;
 WebSocketsClient webSocket;
 
 // LED info
-#define colorSaturation 128
-const uint16_t PixelCount = 25;
+const uint16_t PixelCount = 120;
 const uint8_t PixelPin = 21;  // make sure to set this to the correct pin, ignored for Esp8266
 
 NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
@@ -139,6 +138,8 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
       }
       break;
     case WStype_TEXT:
+      // You're gonna want to check the payload length to double
+      // check what message you're actually expecting
       if (payload[4] - '0' == NODE_NUMBER)
       {
         uint64_t now = millis();
