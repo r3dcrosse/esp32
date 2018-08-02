@@ -14,14 +14,12 @@
 #define USE_SERIAL Serial
 
 // Wifi and Websocket info
-const uint8_t NODE_NUMBER = 2;
+const uint8_t NODE_NUMBER = 1;
 const char* ssid     = WLAN_SSID;
 const char* password = WLAN_PASS;
-char host[] = "192.168.198.2";
-int port = 8000;
+char host[] = "10.8.8.20";
+int port = 3000;
 char path[] = "/socket.io/?EIO=3";
-bool isConnected = false;
-const uint64_t WIFI_CHECK_INTERVAL = 3000;
 
 WiFiClient client;
 WebSocketsClient webSocket;
@@ -130,12 +128,10 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   {
     case WStype_DISCONNECTED:
       USE_SERIAL.println("[WSc] Disconnected!");
-      isConnected = false;
       break;
     case WStype_CONNECTED:
       {
         USE_SERIAL.printf("[WSc] Connected to url:\n", payload);
-        isConnected = true;
 
         // send message to server when Connected
         // socket.io upgrade confirmation message (required)
@@ -174,7 +170,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         else
         {
           handleFrame(payload, length);
-          USE_SERIAL.println("Got a websocket message and handled frameeee");
+          // USE_SERIAL.println("Got a websocket message and handled frameeee");
           strip.Show();
         }
       }
@@ -190,92 +186,88 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   }
 }
 
+bool didConfigureWebsocket = false;
+
 void handleWiFiConnection() {
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
+
+  for (uint8_t count = 0; WiFi.status() != WL_CONNECTED && count < 10; count++)
   {
     delay(500);
-    USE_SERIAL.printf(".");
+    USE_SERIAL.print(WiFi.status());
+    USE_SERIAL.print(" ");
+  }
+
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    USE_SERIAL.println("COULD NOT CONNECT TO WIFI.... giving up");
+    return;
   }
 
   USE_SERIAL.println();
   USE_SERIAL.println("WiFi connected");
   USE_SERIAL.println("IP address: ");
   USE_SERIAL.println(WiFi.localIP());
-  delay(500);
 
   // Handshake with the server
-  webSocket.beginSocketIO(host, port, path);
-  //webSocket.setAuthorization("user", "Password"); // HTTP Basic Authorization
-  webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(500);
+  if (!didConfigureWebsocket)
+  {
+    webSocket.beginSocketIO(host, port, path);
+    //webSocket.setAuthorization("user", "Password"); // HTTP Basic Authorization
+    webSocket.onEvent(webSocketEvent);
+    webSocket.setReconnectInterval(1337);
+    didConfigureWebsocket = true;
+  }
 
   // Initialize pong timestamp with current time
   pongTimestamp = millis();
-}
-
-void wifiReconnect()
-{
-  isConnected = false;
-  WiFi.disconnect(true);
-  handleWiFiConnection();
 }
 
 void setup()
 {
   USE_SERIAL.begin(115200);
   USE_SERIAL.setDebugOutput(true);
-  handleWiFiConnection();
+
+  WiFi.setAutoReconnect(true);
+  //handleWiFiConnection();
 
   // Initialize LEDs
   strip.Begin();
 }
 
+int disconnectedCount = 0;
 void loop()
 {
   webSocket.loop();
-  uint64_t now = millis();
 
-  if (isConnected)
+  if (WiFi.status() != WL_CONNECTED)
   {
-    if(now - pingTimestamp > PING_INTERVAL)
+    if (++disconnectedCount == 1000)
     {
-        pingTimestamp = now;
-        // example socket.io message with type "messageType" and JSON payload
-        char *pingMessage;
-        asprintf(&pingMessage, "42[\"nodeConnected\",{\"node\":%i}]", NODE_NUMBER);
-        webSocket.sendTXT(pingMessage);
-        free(pingMessage);
+      USE_SERIAL.println("WIFI is disconnected...");
+      disconnectedCount = 0;
+      handleWiFiConnection();
     }
-    if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL)
-    {
-      heartbeatTimestamp = now;
-      // socket.io heartbeat message
-      webSocket.sendTXT("2");
-    }
-
-    if ((now - pongTimestamp) > MAX_PONG_TIMEOUT)
-    {
-      USE_SERIAL.println("WE timed out, so we should restart the wifi...");
-      wifiReconnect();
-    }
+    return;
+    // Ideally tell websocket to disconnect here
+    // instead of exiting out of the main loop
   }
+  disconnectedCount = 0;
 
-  if ((now - wifiCheckTimestamp) > WIFI_CHECK_INTERVAL) {
-    wifiCheckTimestamp = now;
-    USE_SERIAL.println("CHECKING WIFI CONNECTION");
-    USE_SERIAL.println(WiFi.status());
-    USE_SERIAL.println("CONNECTED WIFI IS");
-    USE_SERIAL.println(WL_CONNECTED);
-    // USE_SERIAL.println("HEAP FREE:::::");
-    // USE_SERIAL.println(ESP.getFreeHeap());
-    USE_SERIAL.println("Is connected?");
-    USE_SERIAL.println(isConnected);
-    USE_SERIAL.println("::::::::::::::::::::::::");
-
-    if (WiFi.status() != WL_CONNECTED || !isConnected) {
-      USE_SERIAL.println("Trying to reconnect to WiFi...");
-      wifiReconnect();
-    }
+  uint64_t now = millis();
+  if(now - pingTimestamp > PING_INTERVAL)
+  {
+      pingTimestamp = now;
+      // example socket.io message with type "messageType" and JSON payload
+      char *pingMessage;
+      asprintf(&pingMessage, "42[\"nodeConnected\",{\"node\":%i}]", NODE_NUMBER);
+      webSocket.sendTXT(pingMessage);
+      free(pingMessage);
+  }
+  if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL)
+  {
+    heartbeatTimestamp = now;
+    // socket.io heartbeat message
+    webSocket.sendTXT("2");
   }
 }
