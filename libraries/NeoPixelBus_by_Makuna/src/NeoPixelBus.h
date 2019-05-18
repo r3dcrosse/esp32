@@ -137,6 +137,13 @@ public:
         Dirty();
     }
 
+    // used by DotStartSpiMethod if pins can be configured
+    void Begin(int8_t sck, int8_t miso, int8_t mosi, int8_t ss)
+    {
+        _method.Initialize(sck, miso, mosi, ss);
+        Dirty();
+    }
+
     void Show()
     {
         if (!IsDirty())
@@ -322,7 +329,14 @@ public:
         }
     }
     
+    void SwapPixelColor(uint16_t indexPixelOne, uint16_t indexPixelTwo)
+    {
+        auto colorOne = GetPixelColor(indexPixelOne);
+        auto colorTwo = GetPixelColor(indexPixelTwo);
 
+        SetPixelColor(indexPixelOne, colorTwo);
+        SetPixelColor(indexPixelTwo, colorOne);
+    };
  
 protected:
     const uint16_t _countPixels; // Number of RGB LEDs in strip

@@ -17,7 +17,7 @@
 const uint8_t NODE_NUMBER = 1;
 const char* ssid     = WLAN_SSID;
 const char* password = WLAN_PASS;
-char host[] = "10.0.1.105";
+char host[] = "192.168.155.248";
 int port = 8000;
 char path[] = "/socket.io/?EIO=3";
 
@@ -106,12 +106,13 @@ void handleFrame(uint8_t * msg, size_t length)
       }
     } else if (msg[i] - ';' == 0)
     {
-      // set neopixel color for pixel number
-      // if (R != 0 || G != 0 || B != 0 || W != 0) {
-      //   USE_SERIAL.printf("Drawing pixel %d:\n", pixelNumber);
-      // }
       RgbwColor pixelColor = RgbwColor(R, G, B, W);
       strip.SetPixelColor(pixelNumber, pixelColor);
+
+      // set neopixel color for pixel number
+       if (R != 0 || G != 0 || B != 0 || W != 0) {
+         USE_SERIAL.printf("Drawing pixel #%d | COLOR: %d,%d,%d,%d\n", pixelNumber, R, G, B, W);
+       }
 
       // reset currentColor back to parse red
       currentColor = 'R';
